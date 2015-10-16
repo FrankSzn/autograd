@@ -1,4 +1,5 @@
 from __future__ import division
+import abc
 import autograd.numpy as np
 import autograd.numpy.random as npr
 from autograd.scipy.misc import logsumexp
@@ -34,44 +35,73 @@ def inner(a, b):
     return sum(map(contract, a, b))
 
 
-### Gaussian exp fam
+### exponential families
 
-def gaussian():
+
+class ExpFam(object):
+    __metaclass__ = abc.ABCMeta
+
+    @abc.abstractmethod
+    def eta(theta):
+        'static method to convert theta parameters to the parameter tuple'
+        pass
+
+    @abc.abstractmethod
+    def statistic(self, y):
+        'static method to compute the sufficient statistic tuple from data'
+        pass
+
+    @abc.abstractmethod
+    def logZ(self, eta):
+        'static method to compute the log partition function from natural pram'
+        pass
+
+
+class Gaussian(ExpFam):
+    @staticmethod
     def eta(theta):
         mu, Sigma = theta
         J = np.linalg.inv(Sigma)
         h = np.dot(J, mu)
         return -1./2*J, h
 
+    @staticmethod
     def statistic(y):
         return np.outer(y,y), y
 
+    @staticmethod
     def logZ(eta):
         J, h = -2*eta[0], eta[1]
         return -1./2 * np.dot(h, np.linalg.solve(J, h)) \
             + 1./2 * np.log(np.linalg.det(J))
 
-    def max_likelihood(expected_stats):
-        yyT, y, n = expected_stats
-        mu = y / n
-        Sigma = yyT / n - np.outer(mu, mu)
-        return mu, Sigma
 
-    return eta, statistic, logZ, max_likelihood
+class NormalInverseWishart(ExpFam):
+    def eta(theta):
+        S, mu, nu, kappa = theta
+        return np.array([S + np.outer(mu,mu) / kappa, mu/kappa, 1./kappa, nu])
+
+    def statistic(y):
+        # the NIW is the conjugate prior to the Gaussian in (mu, Sigma) params
+        return Gaussian.eta(y) + (-Gaussian.logZ(Gaussian.eta(y)),)
+
+    def logZ(eta):
+        A, b, c, d = eta
+        raise NotImplementedError  # TODO
 
 
 ### exp fam HMM EM
 
-def EM(init_params, data, expfam_fns):
-    eta, statistic, logZ, max_likelihood = expfam_fns
-
+def EM(init_params, data, obs):
     def EM_update(params):
         return M_step(E_step(params, data))
 
     def E_step(params, data):
+        def obs_natparam(theta):
+            return obs.eta(theta) + (-obs.logZ(obs.eta(theta)),)
+
         pi, A, thetas = params
-        natural_params = np.log(pi), np.log(A), \
-            map(lambda theta: eta(theta) + (-logZ(eta(theta)),), thetas)
+        natural_params = np.log(pi), np.log(A), map(obs_natparam, thetas)
         return grad(hmm_log_partition_function)(natural_params, data)
 
     def M_step(expected_stats):
@@ -113,4 +143,4 @@ if __name__ == '__main__':
     init_obs_params = [rand_gaussian(D) for _ in range(N)]
     init_params = (init_pi, init_A, init_obs_params)
 
-    pi, A, thetas = EM(init_params, data, gaussian())
+    pi, A, thetas = EM(init_params, data, Gaussian)
