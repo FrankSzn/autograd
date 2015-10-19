@@ -1,5 +1,6 @@
 from __future__ import division
 import abc
+
 import autograd.numpy as np
 import autograd.numpy.random as npr
 from autograd.scipy.misc import logsumexp
@@ -43,17 +44,17 @@ class ExpFam(object):
 
     @abc.abstractmethod
     def eta(theta):
-        'static method to convert theta parameters to the parameter tuple'
+        'convert theta parameters to the parameter tuple'
         pass
 
     @abc.abstractmethod
-    def statistic(self, y):
-        'static method to compute the sufficient statistic tuple from data'
+    def statistic(y):
+        'compute the sufficient statistic tuple from data'
         pass
 
     @abc.abstractmethod
-    def logZ(self, eta):
-        'static method to compute the log partition function from natural pram'
+    def logZ(eta):
+        'compute the log partition function from natural param'
         pass
 
 
@@ -93,12 +94,14 @@ class NormalInverseWishart(ExpFam):
 ### exp fam HMM EM
 
 def EM(init_params, data, obs):
+    eta, statistic, logZ = obs.eta, obs.statistic, obs.logZ
+
     def EM_update(params):
         return M_step(E_step(params, data))
 
     def E_step(params, data):
         def obs_natparam(theta):
-            return obs.eta(theta) + (-obs.logZ(obs.eta(theta)),)
+            return eta(theta) + (-logZ(eta(theta)),)
 
         pi, A, thetas = params
         natural_params = np.log(pi), np.log(A), map(obs_natparam, thetas)
@@ -126,21 +129,21 @@ def EM(init_params, data, obs):
     return fixed_point(EM_update, init_params)
 
 
-if __name__ == '__main__':
-    np.random.seed(0)
-    np.seterr(divide='ignore', invalid='raise')
+# if __name__ == '__main__':
+#     np.random.seed(0)
+#     np.seterr(divide='ignore', invalid='raise')
 
-    data = npr.randn(10,2)  # TODO load something interesting
+#     data = npr.randn(10,2)  # TODO load something interesting
 
-    N = 2
-    D = data.shape[1]
+#     N = 2
+#     D = data.shape[1]
 
-    def rand_gaussian(D):
-        return npr.randn(D), np.eye(D)
+#     def rand_gaussian(D):
+#         return npr.randn(D), np.eye(D)
 
-    init_pi = normalize(npr.rand(N))
-    init_A = normalize(npr.rand(N, N))
-    init_obs_params = [rand_gaussian(D) for _ in range(N)]
-    init_params = (init_pi, init_A, init_obs_params)
+#     init_pi = normalize(npr.rand(N))
+#     init_A = normalize(npr.rand(N, N))
+#     init_obs_params = [rand_gaussian(D) for _ in range(N)]
+#     init_params = (init_pi, init_A, init_obs_params)
 
-    pi, A, thetas = EM(init_params, data, Gaussian)
+#     pi, A, thetas = EM(init_params, data, Gaussian)
