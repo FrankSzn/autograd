@@ -2,9 +2,12 @@ from __future__ import division
 import autograd.numpy as np
 from autograd import grad
 from itertools import imap
-
+import abc
 
 # TODO deal with -1./2 factors on J's
+
+
+### util
 
 def block_array(lst):
     def helper(x, axis):
@@ -15,17 +18,46 @@ def block_array(lst):
     return helper(lst, 0)
 
 
-def info_to_mean(J, h):
-    Sigma = np.linalg.inv(J)
-    return np.dot(Sigma, h), Sigma
+def fixed_point(f, x0):
+    x1 = f(x0)
+    while not same(x0, x1):
+        x0, x1 = x1, f(x1)
+    return x1
 
 
-def mean_to_info(mu, Sigma):
-    J = np.linalg.inv(Sigma)
-    return J, np.dot(J, mu)
+def same(a, b):
+    if isinstance(a, np.ndarray):
+        return np.allclose(a, b)
+    return all(map(same, a, b))
 
 
-class Gaussian(object):
+### exponential families
+
+class ExpFam(object):
+    __metaclass__ = abc.ABCMeta
+
+    @abc.abstractmethod
+    def eta(theta):
+        'convert theta parameters to the parameter tuple'
+        pass
+
+    @abc.abstractmethod
+    def statistic(y):
+        'compute the sufficient statistic tuple from data'
+        pass
+
+    @abc.abstractmethod
+    def logZ(eta):
+        'compute the log partition function from natural param'
+        pass
+
+    @abc.abstractmethod
+    def max_likelihood(expected_stats, n):
+        'compute the maximum likelihood theta parameters'
+        pass
+
+
+class Gaussian(ExpFam):
     @staticmethod
     def eta(theta):
         mu, Sigma = theta
@@ -42,6 +74,31 @@ class Gaussian(object):
         J, h = -2*eta[0], eta[1]
         return -1./2 * np.dot(h, np.linalg.solve(J, h)) \
             + 1./2 * np.log(np.linalg.det(J))
+
+    @staticmethod
+    def max_likelihood(expected_stats, n):
+        raise NotImplementedError  # TODO
+
+
+class Regression(ExpFam):
+    @staticmethod
+    def eta(theta):
+        raise NotImplementedError
+
+    @staticmethod
+    def statistic(y):
+        raise NotImplementedError
+
+    @staticmethod
+    def logZ(eta):
+        raise NotImplementedError
+
+    @staticmethod
+    def max_likelihood(expected_stats, n):
+        raise NotImplementedError  # TODO
+
+
+### LDS EM
 
 
 def EM(init_params, data):
@@ -89,19 +146,14 @@ def EM(init_params, data):
 
             return (Jpredict, hpredict), lognorm
 
-        def predict_next(J, h):
-            J = J + J11
+        def info_to_mean(J, h):
+            Sigma = np.linalg.inv(J)
+            return np.dot(Sigma, h), Sigma
 
-            L = np.linalg.cholesky(J)
-            v = np.linalg.solve(L, h)
-            lognorm = 1./2 * np.dot(v, v) - np.sum(np.log(np.diag(L))) \
-                + N/2. * np.log(2*np.pi)
-            hpredict = np.dot(J12.T, np.linalg.solve(L.T, v))
 
-            temp = np.linalg.solve(L, J12.T)
-            Jpredict = np.dot(temp, temp.T)
-
-            return (Jpredict, hpredict), lognorm
+        def mean_to_info(mu, Sigma):
+            J = np.linalg.inv(Sigma)
+            return J, np.dot(J, mu)
 
         ### filtering monad
 
@@ -123,3 +175,5 @@ def EM(init_params, data):
         _, lognorm = run(unit(J0, h0), imap(observe, Jnode, hnode))
 
         return lognorm
+
+    return fixed_point(EM_update, init_params)
